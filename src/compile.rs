@@ -1,29 +1,43 @@
 use ::syn::{
-	parse::{self, Parse, ParseStream, },
-	Token,
+	/*parse::{
+		self, Parse, ParseStream, Parser
+	},*/
+	//parse_macro_input,
+	//braced::{ },
+	//parenthesized::{ },
+	//punctuated::{ Punctuated, },
+	//Path,
+	//Token,
+	/*Type,*/ TypePath,
+	Result,
 };
 
-use ::proc_macro2::{Ident, };
+use ::proc_macro::{ TokenStream };
 
-/// Helper struct for parsing the `compile!` macro input
-pub struct CompileInput {
-    pub type_name: Ident,
-    pub helpers: Vec<Ident>,
+use ::darling::{
+	FromMeta,
+};
+
+#[derive(Debug, FromMeta)]
+#[darling(derive_syn_parse)]
+pub struct CompileArgs {
+	#[darling(default)]
+	pub type_path: Option<TypePath>, /* This ISN'T optional ;) */
+	#[darling(default)]
+	pub fields: Option<bool>,
+	#[darling(default)]
+	pub methods: Option<bool>,
+	#[darling(default)]
+	pub variants: Option<bool>,
 }
 
-/// Custom parser for `TypeName, helper1, helper2, ...`
-impl Parse for CompileInput {
-    fn parse(input: ParseStream) -> parse::Result<Self> {
-        let type_name: Ident = input.parse()?;
-        let mut helpers: Vec<Ident> = Vec::new();
-
-        // Continue parsing idents as long as there's a comma
-        while !input.is_empty() {
-            input.parse::<Token![,]>()?;
-            if input.is_empty() { break; } // Allow trailing comma
-            helpers.push(input.parse()?);
-        };
-
-        Ok(CompileInput { type_name, helpers })
-    }
+pub fn parse_compile_args(input: TokenStream) -> Result<CompileArgs> {
+	match syn::parse(input) {
+		Ok(value) => {
+			return Ok(value);
+		},
+		Err(e) => {
+			return Err(e);
+		},
+	};
 }

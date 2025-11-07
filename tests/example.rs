@@ -4,26 +4,19 @@ pub mod example {
 
 	use ::mlua_magic_macros;
 
-	use ::serde::{Serialize, };
-
 	use ::tracing::*;
 
-	#[derive(Serialize)]
-	#[derive(Clone)]
-	#[derive(Copy)]
-	#[derive(Debug)]
+	#[derive(Debug, Copy, Clone, Default, PartialEq)]
 	#[mlua_magic_macros::enumeration]
 	pub enum PlayerStatus {
-		Idle,
+		#[default] Idle,
 		Walking,
 		Attacking,
 	}
 	
-	mlua_magic_macros::compile!(PlayerStatus, variants);
+	mlua_magic_macros::compile!(type_path = PlayerStatus, variants = true);
 
-	#[derive(Serialize)]
-	#[derive(Clone)]
-	#[derive(Debug)]
+	#[derive(Debug, Clone, Default)]
 	#[mlua_magic_macros::structure]
 	pub struct Player {
 		name: String,
@@ -31,6 +24,8 @@ pub mod example {
 		status: PlayerStatus,
 	}
 
+	mlua_magic_macros::compile!(type_path = Player, fields = true, methods = true);
+	
 	#[mlua_magic_macros::implementation]
 	impl Player {
 		// This will be registered as a static "constructor"
@@ -58,25 +53,20 @@ pub mod example {
 		}
 	}
 
-	mlua_magic_macros::compile!(Player, fields, methods);
-
 	#[test]
 	fn main() -> LuaResult<()> {
 		::tracing_subscriber::fmt::init();
-		let lua = Lua::new();
+		let lua: Lua = Lua::new();
 
-		// --- We can now call Player.new() FROM LUA! ---
-		// We must register the type "constructor" with Lua first
-		lua.globals().set("Player", lua.create_function(|_: & Lua, name: String| {
-			return Ok(Player::new(name));
-		})?)?;
+		// # We can now call Player.new() FROM LUA! ---
+		mlua_magic_macros::load!(lua, Player, PlayerStatus); 
 
-		// --- This is the Lua script we will run ---
+		// # This is the Lua script we will run ---
 		let lua_script: &str = r#"
 			-- Call the static `new` function we registered
-			local player = Player("LuaHero");
+			print(PlayerStatus.Idle());
+			player = Player.new("LuaHero");
 			print("Player created:");
-			print(player);
 
 			-- Our derive macro automatically created these methods!
 			print("Player name:", player.name);
@@ -86,13 +76,16 @@ pub mod example {
 
 			-- Call our new custom method
 			player:take_damage(30);
+			player.status = PlayerStatus.Attacking();
 			
-			print("-----------------------------------")
+			print("-----------------------------------");
 			print("New player HP:", player.hp)
 
 			-- Call the method again
+			print("-----------------------------------");
 			player:take_damage(80);
 			print("Player HP after final hit:", player.hp);
+			print("Player status:", player.status);
 			print("Is alive?", player:is_alive());
 		"#;
 
@@ -100,16 +93,16 @@ pub mod example {
 		lua.load(lua_script).exec()?;
 
 		// We can also retrieve the player and see the changes reflected in Rust
-		// let modified_player: Player = lua.globals().get("player")?;
+		let modified_player: Player = lua.globals().get("player")?;
 
 		info!("\n--- Back in Rust ---");
-		// println!("Player after Lua script: {:?}", modified_player);
+		info!("Player after Lua script: {:?}", modified_player);
 
-		// assert_eq!(modified_player.hp, 0);
-		// assert_eq!(modified_player.status, PlayerStatus::Attacking);
-		// assert_eq!(modified_player.is_alive(), false);
+		assert_eq!(modified_player.hp, 0);
+		assert_eq!(modified_player.status, PlayerStatus::Attacking);
+		assert!(!modified_player.is_alive());
 
-		Ok(())
+		return Ok(());
 	}
 
 

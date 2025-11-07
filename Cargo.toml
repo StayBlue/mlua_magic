@@ -1,7 +1,11 @@
 [package]
 name = "mlua-magic-macros"
 version = "0.1.0"
+authors = ["Brendan Lucas <brendan@mail.renderlabs.cloud>"]
+description = "Simplify mlua type conversions like magic!"
+license = "MIT"
 edition = "2024"
+readme="README.md"
 
 [lib]
 proc-macro = true
@@ -10,9 +14,17 @@ proc-macro = true
 syn = { version = "2.0", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0"
+darling = "0.21.3"
 
 [dev-dependencies]
 mlua = { version = "0.11.4", features = ["lua54", "serde", "macros"] }
 serde = { version = "1.0.228", features = [ "derive" ]}
 tracing = "0.1.41"
 tracing-subscriber = "0.3.20"
+
+
+# My style footer
+[lints.clippy]
+needless_return = "allow"
+redundant_field_names = "allow"
+unused_unit = "allow"

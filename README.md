@@ -1,151 +1,181 @@
-# mlua_magic_macros ✨
+# `mlua_magic_macros`
 
-Procedural macros that turn Rust types into friendly Lua UserData
-without ceremony, tedium, or type conversion headaches.
+[](https://www.google.com/search?q=https://crates.io/crates/mlua_magic_macros)
+[](https://www.google.com/search?q=https://docs.rs/mlua_magic_macros)
+[](https://opensource.org/licenses/MIT)
 
-This crate is designed to simplify integration with the
-[`mlua`](https://crates.io/crates/mlua) scripting engine.
+Simple, magical proc-macros to export Rust structs and enums to `mlua` with minimal boilerplate.
 
----
+## 🚀 What It Does
 
-## Features
+This crate provides a set of attribute macros that write the "magic" glue code to automatically generate `impl mlua::UserData` for your Rust types.
 
-### Struct field exposure
-````rust
-#[derive(Clone)]
-#[mlua_magic_macros::structure]
-struct Player {
-    name: String,
-    hp: i32,
-}
-````
+  * Expose struct fields as Lua properties (`player.hp`).
+  * Expose enum unit variants as Lua constructors (`PlayerStatus.Idle()`).
+  * Expose Rust methods (`&self`, `&mut self`, and `static`) as Lua methods (`player:take_damage(10)`).
 
-Lua can read fields directly:
+## 📦 Installation
 
-````lua
-print(player.name)
-print(player.hp)
-````
+Add this to your `Cargo.toml`:
 
-Setter support planned.
+```toml
+[dependencies]
+mlua = { version = "0.9", features = ["lua54", "macros"] }
+mlua_magic_macros = "0.1.0" # Or the version you are using
+```
 
----
+## ✨ Quick Start Example
 
-### Enum variant exposure
-````rust
-#[derive(Clone, Copy)]
+Here is a complete, copy-pasteable example.
+
+### 1\. The Rust Code
+
+Define your types and "decorate" them with the macros.
+
+```rust
+use mlua::prelude::*;
+use mlua_magic_macros;
+
+// STEP 1: Decorate your enum
+#[derive(Debug, Copy, Clone, Default, PartialEq)]
 #[mlua_magic_macros::enumeration]
-enum Status {
-    Idle,
-    Busy,
-}
-````
-
-Lua usage:
-
-````lua
-local s = Status.Idle
-````
-
-Variants containing data can be exposed via static methods.
-
----
-
-### Method and constructor binding
-````rust
-#[mlua_magic_macros::implementation]
-impl Player {
-    pub fn new(name: String) -> Self { ... }
-    pub fn is_alive(&self) -> bool { ... }
-}
-````
-
-Lua:
-
-````lua
-local p = Player.new("Zelda")
-print(p:is_alive())
-````
-
----
-
-### One-line glue to complete registration
-
-````rust
-mlua_magic_macros::compile!(Player, fields, methods);
-````
-
-Supported helper flags:
-- fields
-- methods
-- variants
-
----
-
-## Full Example
-
-````rust
-#[derive(Clone, Copy)]
-#[mlua_magic_macros::enumeration]
-enum PlayerStatus {
-    Idle,
+pub enum PlayerStatus {
+    #[default] Idle,
     Walking,
     Attacking,
 }
 
-mlua_magic_macros::compile!(PlayerStatus, variants);
+// STEP 2: Compile the UserData impl for the enum
+// This generates `impl mlua::UserData for PlayerStatus`
+mlua_magic_macros::compile!(type_path = PlayerStatus, variants = true);
 
-#[derive(Clone)]
+
+// STEP 1: Decorate your struct
+#[derive(Debug, Clone, Default)]
 #[mlua_magic_macros::structure]
-struct Player {
+pub struct Player {
     name: String,
     hp: i32,
     status: PlayerStatus,
 }
 
+// STEP 1 (continued): Decorate the impl block
 #[mlua_magic_macros::implementation]
 impl Player {
+    // Registered as a static "constructor": Player.new()
     pub fn new(name: String) -> Self {
-        Self { name, hp: 100, status: PlayerStatus::Idle }
+        Self {
+            name,
+            hp: 100,
+            status: PlayerStatus::Idle,
+        }
     }
 
+    // Registered as a `&mut self` method: player:take_damage()
     pub fn take_damage(&mut self, amount: i32) {
-        self.hp = (self.hp - amount).max(0);
+        self.hp -= amount;
+        if self.hp < 0 {
+            self.hp = 0;
+        }
     }
 
+    // Registered as a `&self` method: player:is_alive()
     pub fn is_alive(&self) -> bool {
         self.hp > 0
     }
 }
 
-mlua_magic_macros::compile!(Player, fields, methods);
-````
+// STEP 2: Compile the UserData impl for the struct
+// This generates `impl mlua::UserData for Player`
+mlua_magic_macros::compile!(type_path = Player, fields = true, methods = true);
 
-Lua:
 
-````lua
+// STEP 3: Load the types into a Lua instance
+fn main() -> LuaResult<()> {
+    let lua = Lua::new();
+
+    // This makes `Player` and `PlayerStatus` available as globals in Lua
+    mlua_magic_macros::load!(lua, Player, PlayerStatus);
+
+    // See the Lua script below!
+    run_lua_code(&lua)?;
+    Ok(())
+}
+```
+
+### 2\. The Lua Script
+
+Now you can call your Rust code *from* Lua as if it were a native Lua table.
+
+```lua
+-- run_lua_code.lua
+
+-- Call the static `new` function
 local player = Player.new("LuaHero")
+print("Player created:")
+
+-- Access struct fields directly (from `#[structure]`)
+print("Player name:", player.name)
+print("Player HP:", player.hp)
+
+-- Access enum variants (from `#[enumeration]`)
+print("Player status:", player.status) -- "Idle"
+print("Is alive?", player:is_alive()) -- `true`
+
+-- Call a `&mut self` method
 player:take_damage(30)
-print(player.hp)
-````
+print("New player HP:", player.hp) -- 70
 
----
+-- You can even set fields!
+player.status = PlayerStatus.Attacking()
+print("Player status:", player.status) -- "Attacking"
 
-## Roadmap
+player:take_damage(80)
+print("Player HP after final hit:", player.hp) -- 0
+print("Is alive?", player:is_alive()) -- `false`
+```
 
-Planned improvements:
-* Setter support for struct fields
-* Automatic constructors for enum variants with data
-* Custom type conversion extensibility points
+## 📚 API Guide
 
----
+This crate uses a 3-step process:
+
+1.  **Decorate:** Add attributes (`#[...])` to your types to tell the macros what to export.
+2.  **Compile:** Use the `compile!(...)` macro to generate the `impl mlua::UserData` block.
+3.  **Load:** Use the `load!(...)` macro at runtime to register your types with a `Lua` instance.
+
+### Step 1: Decorate
+
+| Macro | Target | Purpose |
+| :--- | :--- | :--- |
+| `#[enumeration]` | `enum` | Exposes **unit variants** as static functions (e.g., `MyEnum.VariantA()`). |
+| `#[structure]` | `struct`| Exposes **fields** as readable/writable properties (e.g., `my_struct.field`). |
+| `#[implementation]`| `impl` | Exposes **functions** as methods (e.g., `MyType.new()`, `my_inst:do_thing()`). |
+
+### Step 2: Compile
+
+The `compile!` macro generates the final `impl mlua::UserData` and `impl mlua::FromLua` for your type.
+
+```rust
+mlua_magic_macros::compile!(
+    type_path = MyType, // The name of the struct/enum
+    fields = true,      // Include fields from `#[structure]`?
+    methods = true,     // Include methods from `#[implementation]`?
+    variants = true     // Include variants from `#[enumeration]`?
+);
+```
+
+### Step 3: Load
+
+The `load!` macro registers your compiled types as globals in Lua.
+
+```rust
+let lua = Lua::new();
+// This is like running:
+// _G.Player = (proxy for Player UserData)
+// _G.PlayerStatus = (proxy for PlayerStatus UserData)
+mlua_magic_macros::load!(lua, Player, PlayerStatus);
+```
 
 ## License
 
-MIT
-
----
-
-## Contributing
-
-Issues, ideas, and PRs are welcome!
+This crate is licensed under the **[MIT license](http://opensource.org/licenses/MIT)**.
