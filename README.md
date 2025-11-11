@@ -1,8 +1,6 @@
 # `mlua_magic_macros`
 
-[](https://www.google.com/search?q=https://crates.io/crates/mlua_magic_macros)
-[](https://www.google.com/search?q=https://docs.rs/mlua_magic_macros)
-[](https://opensource.org/licenses/MIT)
+[Docs](https://crates.io/crates/mlua_magic_macros)
 
 Simple, magical proc-macros to export Rust structs and enums to `mlua` with minimal boilerplate.
 
@@ -20,8 +18,8 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-mlua = { version = "0.9", features = ["lua54", "macros"] }
-mlua-magic-macros = "0.1.1" # Or the version you are using
+mlua = { version = "0.11.4", features = ["lua54", "macros"] } # Or the version you are using
+mlua-magic-macros = "0.1.2" # Or the version you are using
 ```
 
 ## ✨ Quick Start Example
@@ -33,8 +31,8 @@ Here is a complete, copy-pasteable example.
 Define your types and "decorate" them with the macros.
 
 ```rust
-use mlua::prelude::*;
-use mlua_magic_macros;
+use ::mlua::prelude::*;
+use ::mlua_magic_macros;
 
 // STEP 1: Decorate your enum
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
@@ -64,24 +62,24 @@ pub struct Player {
 impl Player {
     // Registered as a static "constructor": Player.new()
     pub fn new(name: String) -> Self {
-        Self {
+        return Self {
             name,
             hp: 100,
             status: PlayerStatus::Idle,
-        }
+        };
     }
 
     // Registered as a `&mut self` method: player:take_damage()
-    pub fn take_damage(&mut self, amount: i32) {
+    pub fn take_damage(&mut self, amount: i32) -> () {
         self.hp -= amount;
         if self.hp < 0 {
             self.hp = 0;
-        }
+        };
     }
 
     // Registered as a `&self` method: player:is_alive()
     pub fn is_alive(&self) -> bool {
-        self.hp > 0
+        return self.hp > 0;
     }
 }
 
@@ -99,7 +97,7 @@ fn main() -> LuaResult<()> {
 
     // See the Lua script below!
     run_lua_code(&lua)?;
-    Ok(())
+    return Ok(());
 }
 ```
 
@@ -111,28 +109,28 @@ Now you can call your Rust code *from* Lua as if it were a native Lua table.
 -- run_lua_code.lua
 
 -- Call the static `new` function
-local player = Player.new("LuaHero")
-print("Player created:")
+local player = Player.new("LuaHero");
+print("Player created:");
 
 -- Access struct fields directly (from `#[structure]`)
-print("Player name:", player.name)
-print("Player HP:", player.hp)
+print("Player name:", player.name);
+print("Player HP:", player.hp);
 
 -- Access enum variants (from `#[enumeration]`)
-print("Player status:", player.status) -- "Idle"
-print("Is alive?", player:is_alive()) -- `true`
+print("Player status:", player.status); -- "Idle"
+print("Is alive?", player:is_alive()); -- `true`
 
 -- Call a `&mut self` method
-player:take_damage(30)
-print("New player HP:", player.hp) -- 70
+player:take_damage(30);
+print("New player HP:", player.hp); -- 70
 
 -- You can even set fields!
-player.status = PlayerStatus.Attacking()
-print("Player status:", player.status) -- "Attacking"
+player.status = PlayerStatus.Attacking();
+print("Player status:", player.status); -- "Attacking"
 
 player:take_damage(80)
-print("Player HP after final hit:", player.hp) -- 0
-print("Is alive?", player:is_alive()) -- `false`
+print("Player HP after final hit:", player.hp); -- 0
+print("Is alive?", player:is_alive()); -- `false`
 ```
 
 ## 📚 API Guide
@@ -141,7 +139,7 @@ This crate uses a 3-step process:
 
 1.  **Decorate:** Add attributes (`#[...])` to your types to tell the macros what to export.
 2.  **Compile:** Use the `compile!(...)` macro to generate the `impl mlua::UserData` block.
-3.  **Load:** Use the `load!(...)` macro at runtime to register your types with a `Lua` instance.
+3.  **Load:** Use the `load!(...)` macro at runtime to register your types with a `Lua` instance. You can also manually load your types if our API doesn't allow you to do something.
 
 ### Step 1: Decorate
 

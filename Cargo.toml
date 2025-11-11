@@ -3,6 +3,7 @@ name = "mlua-magic-macros"
 version = "0.1.2"
 authors = ["Brendan Lucas <brendan@mail.renderlabs.cloud>"]
 description = "Simplify mlua type conversions like magic!"
+repository = "https://github.com/Renderthegreat/mlua_magic"
 license = "MIT"
 edition = "2024"
 readme="README.md"
