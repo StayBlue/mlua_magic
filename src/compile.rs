@@ -22,7 +22,7 @@ use ::darling::{
 #[darling(derive_syn_parse)]
 pub struct CompileArgs {
 	#[darling(default)]
-	pub type_path: Option<TypePath>, /* This ISN'T optional ;) */
+	pub type_path: Option<TypePath>, // ! This isn't optional ;)
 	#[darling(default)]
 	pub fields: Option<bool>,
 	#[darling(default)]

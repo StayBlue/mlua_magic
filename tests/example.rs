@@ -11,7 +11,7 @@ pub mod example {
 	pub enum PlayerStatus {
 		#[default] Idle,
 		Walking,
-		Attacking,
+		Attacking(i32),
 	}
 	
 	mlua_magic_macros::compile!(type_path = PlayerStatus, variants = true);
@@ -76,7 +76,7 @@ pub mod example {
 
 			-- Call our new custom method
 			player:take_damage(30);
-			player.status = PlayerStatus.Attacking();
+			player.status = PlayerStatus.Attacking(20);
 			
 			print("-----------------------------------");
 			print("New player HP:", player.hp)
@@ -99,7 +99,7 @@ pub mod example {
 		info!("Player after Lua script: {:?}", modified_player);
 
 		assert_eq!(modified_player.hp, 0);
-		assert_eq!(modified_player.status, PlayerStatus::Attacking);
+		assert_eq!(modified_player.status, PlayerStatus::Attacking(20));
 		assert!(!modified_player.is_alive());
 
 		return Ok(());

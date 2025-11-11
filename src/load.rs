@@ -1,10 +1,10 @@
 use ::syn::{
-	parse::{self, Parse, ParseStream, },
+	parse::{ self, Parse, ParseStream, },
 	Token,
 	Type, TypePath, 
 };
 
-use ::proc_macro2::{Ident, };
+use ::proc_macro2::{ Ident, };
 
 /// Helper struct for parsing the `load!` macro input
 pub struct LoadInput {

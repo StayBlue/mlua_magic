@@ -8,11 +8,13 @@ use ::proc_macro::TokenStream;
 use ::proc_macro2;
 use ::proc_macro2::Ident;
 
-use ::quote::quote;
+use ::quote::{ quote, format_ident };
 
-// use syn::parse::Parse;
-use ::syn::{Fields, Pat, parse_macro_input};
-use syn::{/*Path,*/ TypePath, };
+use ::syn::{
+	parse_macro_input,
+	Fields, Pat,
+	TypePath,
+};
 
 use crate::compile::parse_compile_args;
 
@@ -45,7 +47,7 @@ use crate::compile::parse_compile_args;
 /// }
 ///
 /// // Later, compile userdata:
-/// mlua_magic_macros::compile!(Player, fields, methods);
+/// mlua_magic_macros::compile!(type_path = Player, fields = true, methods = true);
 /// ```
 ///
 /// After registration through `mlua::UserData`,
@@ -116,14 +118,9 @@ pub fn structure(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Implements a helper function `_to_mlua_variants` for a Rust `enum'.
 ///
-/// This function registers all *unit variants* (e.g., `MyEnum::VariantA`)
+/// This function registers all variants (e.g.,
 /// as static properties on the Lua UserData. This allows accessing
 /// them in Lua as `MyEnum.VariantA`.
-///
-/// Variants with data (e.g., `MyEnum::VariantB(i32)`) are *not*
-/// automatically registered. You should expose these by creating
-/// a static constructor function in an `#[mlua_magic::implementation]`
-/// block.
 ///
 /// # Example:
 /// ```ignore
@@ -132,14 +129,6 @@ pub fn structure(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// enum MyEnum {
 ///     VariantA,
 ///     VariantB(i32),
-/// }
-///
-/// #[mlua_magic::implementation]
-/// impl MyEnum {
-///     // This will expose `MyEnum.new_variant_b(123)` in Lua
-///     pub fn new_variant_b(val: i32) -> Self {
-///         Self::VariantB(val)
-///     }
 /// }
 /// ```
 ///
@@ -153,18 +142,57 @@ pub fn enumeration(__attr: TokenStream, item: TokenStream) -> TokenStream {
 	// Build registrations for unit variants (register as static constructors)
 	let mut variant_registrations: Vec<proc_macro2::TokenStream> = Vec::new();
 	for variant in &ast.variants {
-		if let Fields::Unit = &variant.fields {
-			let variant_name: &Ident = &variant.ident;
-			let variant_name_str: String = variant_name.to_string();
+		match &variant.fields {
+			Fields::Unit => {
+				let variant_name: &Ident = &variant.ident;
+				let variant_name_str: String = variant_name.to_string();
 
-			// use add_function to register an associated/static function that returns the enum
-			variant_registrations.push(quote! {
-				// e.g. methods.add_function("Idle", |_, (): ()| Ok(PlayerStatus::Idle));
-				methods.add_function(#variant_name_str, |_, (): ()| {
-					Ok(#name::#variant_name)
+				// use add_function to register an associated/static function that returns the enum
+				variant_registrations.push(quote! {
+					// e.g. methods.add_function("Idle", |_, (): ()| Ok(PlayerStatus::Idle));
+					methods.add_function(#variant_name_str, |_, (): ()| {
+						Ok(#name::#variant_name)
+					});
 				});
-			});
-		}
+			},
+			Fields::Unnamed(fields) => {
+				let variant_name = &variant.ident;
+				let variant_name_str = variant_name.to_string();
+
+				// Extract each field type T1, T2, …
+				let field_types: Vec<_> =
+					fields.unnamed.iter().map(|f| &f.ty).collect();
+
+				let arg_idents: Vec<Ident> = (0..field_types.len())
+					.map(|i: usize| {
+						return format_ident!("arg{}", i);
+					})
+					.collect()
+				;
+
+				variant_registrations.push(quote! {
+					methods.add_function(#variant_name_str, |_, (#(#arg_idents),*): (#(#field_types),*)| {
+						Ok(#name::#variant_name(#(#arg_idents),*))
+					});
+				});
+			},
+			Fields::Named(fields) => {
+				// Same pattern as unnamed, except wrap into a struct-like variant:
+				let variant_name = &variant.ident;
+				let variant_name_str = variant_name.to_string();
+
+				let names: Vec<_> = fields.named.iter().map(|f| f.ident.as_ref().unwrap()).collect();
+				let types: Vec<_> = fields.named.iter().map(|f| &f.ty).collect();
+
+				variant_registrations.push(quote! {
+					methods.add_function(#variant_name_str, |_, tbl: mlua::Table| {
+						Ok(#name::#variant_name {
+							#(#names: tbl.get::<_, #types>(stringify!(#names))?),*
+						})
+					});
+				});
+			}
+		};
 	}
 
 	// Create helper fn _to_mlua_variants, plus FromLua and IntoLua impls for lossless userdata round-trip.
@@ -222,7 +250,7 @@ pub fn enumeration(__attr: TokenStream, item: TokenStream) -> TokenStream {
 /// }
 ///
 /// // Later, compile userdata:
-/// mlua_magic_macros::compile!(Player, fields, methods);
+/// mlua_magic_macros::compile!(type_path = Player, fields = true, methods = true);
 /// ```
 ///
 /// Lua scripts may then call these methods:
@@ -339,7 +367,7 @@ pub fn implementation(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// }
 ///
 /// // Generates `impl mlua::UserData for Player`
-/// mlua_magic::compile!(Player, fields, methods);
+/// mlua_magic::compile!(type_path = Player, fields = true, methods true);
 /// ```
 ///
 /// # Example (for an enum):
@@ -353,7 +381,7 @@ pub fn implementation(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// }
 ///
 /// // Generates `impl mlua::UserData for Status` and `impl mlua::IntoLua for Status`
-/// mlua_magic::compile!(Status, variants, methods);
+/// mlua_magic::compile!(type_path = Status, variants = true, methods = true);
 /// ```
 #[proc_macro]
 pub fn compile(input: TokenStream) -> TokenStream {
@@ -397,7 +425,7 @@ pub fn compile(input: TokenStream) -> TokenStream {
 				#variants_call
 			}
 		}
-		impl mlua::FromLua for  #type_path {
+		impl mlua::FromLua for #type_path {
     		fn from_lua(value: mlua::Value, lua: &mlua::Lua) -> mlua::Result<Self> {
 				let output: mlua::Result<Self> = match value {
 					mlua::Value::UserData(user_data) => {
