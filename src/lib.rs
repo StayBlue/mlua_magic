@@ -291,30 +291,57 @@ pub fn implementation(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 })
                 .unzip();
 
+            // Check if the function is async
+            let is_async = fn_item.sig.asyncness.is_some();
+
             // Check for `&self`, `&mut self`, or static
             if let Some(receiver) = &fn_item.sig.receiver() {
                 if receiver.mutability.is_some() {
-                    // Here, `this`` is is `&mut self`
-                    method_registrations.push(quote! {
-						methods.add_method_mut(#fn_name_str, |_, this, (#(#arg_names,)*): (#(#arg_tys,)*)| {
-							return Ok(this.#fn_name(#(#arg_names,)*));
+                    // Here, `this` is `&mut self`
+                    if is_async {
+                        method_registrations.push(quote! {
+                            methods.add_async_method_mut(#fn_name_str, |_, mut this, (#(#arg_names,)*): (#(#arg_tys,)*)| async move {
+								return Ok(this.#fn_name(#(#arg_names,)*).await);
+                            });
+                        });
+                    } else {
+                        method_registrations.push(quote! {
+							methods.add_method_mut(#fn_name_str, |_, this, (#(#arg_names,)*): (#(#arg_tys,)*)| {
+								return Ok(this.#fn_name(#(#arg_names,)*));
+							});
 						});
-					});
+                    }
                 } else {
-                    // Here, `this`` is `&self`
-                    method_registrations.push(quote! {
-						 methods.add_method(#fn_name_str, |_, this, (#(#arg_names,)*): (#(#arg_tys,)*)| {
-							return Ok(this.#fn_name(#(#arg_names,)*));
+                    // Here, `this` is `&self`
+                    if is_async {
+                        method_registrations.push(quote! {
+                            methods.add_async_method(#fn_name_str, |_, this, (#(#arg_names,)*): (#(#arg_tys,)*)| async move {
+                        		return Ok(this.#fn_name(#(#arg_names,)*).await);
+                            });
+                        });
+                    } else {
+                        method_registrations.push(quote! {
+                            methods.add_method(#fn_name_str, |_, this, (#(#arg_names,)*): (#(#arg_tys,)*)| {
+								return Ok(this.#fn_name(#(#arg_names,)*));
+							});
 						});
-					});
+                    }
                 };
             } else {
                 // This is a static function (like `new`)
-                method_registrations.push(quote! {
-                    methods.add_function(#fn_name_str, |_, (#(#arg_names,)*): (#(#arg_tys,)*)| {
-                        return Ok(#name::#fn_name(#(#arg_names,)*));
+                if is_async {
+                    method_registrations.push(quote! {
+                        methods.add_async_function(#fn_name_str, |_, (#(#arg_names,)*): (#(#arg_tys,)*)| async {
+                            return Ok(#name::#fn_name(#(#arg_names,)*).await);
+                        });
                     });
-                });
+                } else {
+                    method_registrations.push(quote! {
+                        methods.add_function(#fn_name_str, |_, (#(#arg_names,)*): (#(#arg_tys,)*)| {
+                            return Ok(#name::#fn_name(#(#arg_names,)*));
+                        });
+                    });
+                }
             };
         };
     }
