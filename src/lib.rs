@@ -216,6 +216,20 @@ pub fn enumeration(__attr: TokenStream, item: TokenStream) -> TokenStream {
 	return output.into();
 }
 
+/// Check whether a function signature returns a `Result` type.
+/// Matches any path whose last segment is `Result` (e.g. `Result`, `mlua::Result`,
+/// `anyhow::Result`).
+fn returns_result_type(sig: &syn::Signature) -> bool {
+	if let syn::ReturnType::Type(_, ty) = &sig.output {
+		if let syn::Type::Path(type_path) = &**ty {
+			if let Some(segment) = type_path.path.segments.last() {
+				return segment.ident == "Result";
+			}
+		}
+	}
+	false
+}
+
 /// Implements a helper function `_to_mlua_methods` for a Rust `impl` block,
 /// enabling automatic registration of its methods with `mlua::UserData`.
 ///
@@ -230,6 +244,12 @@ pub fn enumeration(__attr: TokenStream, item: TokenStream) -> TokenStream {
 ///   immutable methods, accessible in Lua as `my_instance:my_method()`.
 /// * **Mutable Methods** (e.g., `fn my_mut_method(&mut self)`) are registered as
 ///   mutable methods, accessible in Lua as `my_instance:my_mut_method()`.
+///
+/// # Result propagation
+/// Methods returning `Result<T>` (or `mlua::Result<T>`, `anyhow::Result<T>`, etc.)
+/// will have their errors properly propagated as Lua errors. The error type must
+/// implement `Into<mlua::Error>` (which `mlua::Error` and `anyhow::Error` both do
+/// when the `anyhow` feature is enabled).
 ///
 /// # Usage
 /// Apply the macro directly to the `impl` block for the type:
@@ -294,35 +314,59 @@ pub fn implementation(_attr: TokenStream, item: TokenStream) -> TokenStream {
 			// Check if the function is async
 			let is_async = fn_item.sig.asyncness.is_some();
 
+			// When the method returns Result<T>, use `?` to unwrap it so that errors
+			// propagate as Lua errors instead of being double-wrapped as Ok(Err(...)).
+			let returns_result = returns_result_type(&fn_item.sig);
+
 			// Check for `&self`, `&mut self`, or static
 			if let Some(receiver) = &fn_item.sig.receiver() {
 				if receiver.mutability.is_some() {
 					// Here, `this` is `&mut self`
 					if is_async {
+						let body = if returns_result {
+							quote! { return Ok(this.#fn_name(#(#arg_names,)*).await?); }
+						} else {
+							quote! { return Ok(this.#fn_name(#(#arg_names,)*).await); }
+						};
 						method_registrations.push(quote! {
                             methods.add_async_method_mut(#fn_name_str, |_, mut this, (#(#arg_names,)*): (#(#arg_tys,)*)| async move {
-								return Ok(this.#fn_name(#(#arg_names,)*).await);
+								#body
                             });
                         });
 					} else {
+						let body = if returns_result {
+							quote! { return Ok(this.#fn_name(#(#arg_names,)*)?); }
+						} else {
+							quote! { return Ok(this.#fn_name(#(#arg_names,)*)); }
+						};
 						method_registrations.push(quote! {
 							methods.add_method_mut(#fn_name_str, |_, this, (#(#arg_names,)*): (#(#arg_tys,)*)| {
-								return Ok(this.#fn_name(#(#arg_names,)*));
+								#body
 							});
 						});
 					}
 				} else {
 					// Here, `this` is `&self`
 					if is_async {
+						let body = if returns_result {
+							quote! { return Ok(this.#fn_name(#(#arg_names,)*).await?); }
+						} else {
+							quote! { return Ok(this.#fn_name(#(#arg_names,)*).await); }
+						};
 						method_registrations.push(quote! {
                             methods.add_async_method(#fn_name_str, |_, this, (#(#arg_names,)*): (#(#arg_tys,)*)| async move {
-                        		return Ok(this.#fn_name(#(#arg_names,)*).await);
+                        		#body
                             });
                         });
 					} else {
+						let body = if returns_result {
+							quote! { return Ok(this.#fn_name(#(#arg_names,)*)?); }
+						} else {
+							quote! { return Ok(this.#fn_name(#(#arg_names,)*)); }
+						};
 						method_registrations.push(quote! {
 							methods.add_method(#fn_name_str, |_, this, (#(#arg_names,)*): (#(#arg_tys,)*)| {
-								return Ok(this.#fn_name(#(#arg_names,)*));
+								#body
 							});
 						});
 					}
@@ -330,15 +374,25 @@ pub fn implementation(_attr: TokenStream, item: TokenStream) -> TokenStream {
 			} else {
 				// This is a static function (like `new`)
 				if is_async {
+					let body = if returns_result {
+						quote! { return Ok(#name::#fn_name(#(#arg_names,)*).await?); }
+					} else {
+						quote! { return Ok(#name::#fn_name(#(#arg_names,)*).await); }
+					};
 					method_registrations.push(quote! {
 						methods.add_async_function(#fn_name_str, |_, (#(#arg_names,)*): (#(#arg_tys,)*)| async {
-							return Ok(#name::#fn_name(#(#arg_names,)*).await);
+							#body
 						});
 					});
 				} else {
+					let body = if returns_result {
+						quote! { return Ok(#name::#fn_name(#(#arg_names,)*)?); }
+					} else {
+						quote! { return Ok(#name::#fn_name(#(#arg_names,)*)); }
+					};
 					method_registrations.push(quote! {
 						methods.add_function(#fn_name_str, |_, (#(#arg_names,)*): (#(#arg_tys,)*)| {
-							return Ok(#name::#fn_name(#(#arg_names,)*));
+							#body
 						});
 					});
 				}
